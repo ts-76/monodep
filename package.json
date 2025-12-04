@@ -1,0 +1,26 @@
+{
+    "name": "mdepcheck",
+    "version": "1.0.0",
+    "description": "A dependency check tool for monorepos",
+    "main": "dist/index.js",
+    "bin": {
+        "mdepcheck": "./dist/index.js"
+    },
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js"
+    },
+    "dependencies": {
+        "@types/js-yaml": "^4.0.9",
+        "chalk": "^4.1.2",
+        "commander": "^14.0.2",
+        "glob": "^13.0.0",
+        "js-yaml": "^4.1.1",
+        "lilconfig": "^3.1.3",
+        "typescript": "^5.9.3"
+    },
+    "devDependencies": {
+        "@types/node": "^24.10.1",
+        "knip": "^5.71.0"
+    }
+}
