@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.1.2
+
+[compare changes](https://github.com/ts-76/mdepcheck/compare/v0.1.1...v0.1.2)
+
+### 🩹 Fixes
+
+- Package-name ([417f72a](https://github.com/ts-76/mdepcheck/commit/417f72a))
+
+### ❤️ Contributors
+
+- Ts-76 <ts.createlink@gmail.com>
+
 ## v0.1.1
 
 

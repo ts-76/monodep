@@ -1,6 +1,6 @@
 {
     "name": "@ts-76/mdepcheck",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": "A dependency check tool for monorepos",
     "author": "ts-76",
     "license": "MIT",
