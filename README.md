@@ -8,7 +8,6 @@ There are many excellent tools for managing JavaScript dependencies. Here's how 
 
 | Feature | Knip | depcheck | syncpack | Dependabot | dependency-cruiser | monodep |
 |---------|------|----------|----------|------------|--------------------|---------|
-
 | Unused dependencies | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
 | Missing dependencies | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
 | Wrong dependency type (dev vs prod) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
