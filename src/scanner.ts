@@ -23,12 +23,18 @@ export class Scanner {
         });
 
         return files.map((file) => {
+            // Normalize separators so path checks are OS-independent
+            const normalized = file.split(path.sep).join('/');
+
             const isDev =
-                file.includes('.test.') ||
-                file.includes('.spec.') ||
-                file.includes('/test/') ||
-                file.includes('/tests/') ||
-                file.includes('/__tests__/');
+                /\.(test|spec)\.[cm]?[tj]sx?$/.test(normalized) ||
+                /\.(stories|story)\.[tj]sx?$/.test(normalized) ||
+                /\/(test|tests|__tests__|__mocks__|e2e|cypress)\//.test(normalized) ||
+                /\/\.storybook\//.test(normalized) ||
+                /\/setupTests\.[tj]sx?$/.test(normalized) ||
+                /(jest|vitest|playwright|cypress)\.config\.[tj]s$/.test(normalized) ||
+                /\/vite\.config\.[cm]?ts$/.test(normalized) ||
+                /\/slidev\.config\.[cm]?ts$/.test(normalized);
             return { file, isDev };
         });
     }

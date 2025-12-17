@@ -9,6 +9,7 @@ export interface PackageInfo {
     dependencies: Record<string, string>;
     devDependencies: Record<string, string>;
     peerDependencies: Record<string, string>;
+    optionalDependencies: Record<string, string>;
 }
 
 export class MonorepoManager {
@@ -47,6 +48,7 @@ export class MonorepoManager {
                     dependencies: json.dependencies || {},
                     devDependencies: json.devDependencies || {},
                     peerDependencies: json.peerDependencies || {},
+                    optionalDependencies: json.optionalDependencies || {},
                 });
             } catch (e) {
                 console.warn(`Failed to parse ${pkgPath}:`, e);

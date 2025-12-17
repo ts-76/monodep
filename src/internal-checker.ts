@@ -24,6 +24,7 @@ export class InternalChecker {
                 ...pkg.dependencies,
                 ...pkg.devDependencies,
                 ...pkg.peerDependencies,
+                ...pkg.optionalDependencies,
             };
 
             // Check 1: Workspace packages should use workspace: protocol
