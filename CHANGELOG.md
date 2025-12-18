@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.1.9
+
+[compare changes](https://github.com/ts-76/monodep/compare/v0.1.8...v0.1.9)
+
+### 🚀 Enhancements
+
+- Add `Scanner` class to glob source files and identify development-related files. ([7472c81](https://github.com/ts-76/monodep/commit/7472c81))
+
+### 🩹 Fixes
+
+- Analyze ([e17ef44](https://github.com/ts-76/monodep/commit/e17ef44))
+
+### ❤️ Contributors
+
+- Tsukuruhito <ts.createlink@gmail.com>
+
 ## v0.1.8
 
 [compare changes](https://github.com/ts-76/monodep/compare/v0.1.7...v0.1.8)
