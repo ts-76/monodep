@@ -28,13 +28,11 @@ export class Scanner {
 
             const isDev =
                 /\.(test|spec)\.[cm]?[tj]sx?$/.test(normalized) ||
-                /\.(stories|story)\.[tj]sx?$/.test(normalized) ||
-                /\/(test|tests|__tests__|__mocks__|e2e|cypress)\//.test(normalized) ||
+                /\.(stories|story)\.[cm]?[tj]sx?$/.test(normalized) ||
+                /\/(test|tests|spec|specs|__tests__|__mocks__|__fixtures__|e2e|cypress)\//.test(normalized) ||
                 /\/\.storybook\//.test(normalized) ||
-                /\/setupTests\.[tj]sx?$/.test(normalized) ||
-                /(jest|vitest|playwright|cypress)\.config\.[tj]s$/.test(normalized) ||
-                /\/vite\.config\.[cm]?ts$/.test(normalized) ||
-                /\/slidev\.config\.[cm]?ts$/.test(normalized);
+                /\/(setup|setupTests|testSetup)\.[cm]?[tj]sx?$/.test(normalized) ||
+                /\.config\.[cm]?[tj]s$/.test(normalized);
             return { file, isDev };
         });
     }
