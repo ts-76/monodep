@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import path from 'path';
 import chalk from 'chalk';
+import semver from 'semver';
 import { MonorepoManager } from './monorepo';
 import { Analyzer } from './analyzer';
 import { VersionChecker } from './version-checker';
@@ -66,6 +67,8 @@ program
 
         const analyzer = new Analyzer();
         const versionChecker = new VersionChecker();
+        const usedImports = new Map<string, Set<string>>();
+        const packagesWithIssues = new Set<string>();
 
         const stats: Stats = {
             packagesScanned: 0,
@@ -134,57 +137,60 @@ program
             ];
 
             const result = await analyzer.analyze(pkg, ignorePatterns, config.ignoreDependencies);
+            const { unused, missing, wrongType, prodImports, devImports } = result;
+            const allImports = new Set<string>([...prodImports, ...devImports]);
+            usedImports.set(pkg.name, allImports);
 
             let packageHasIssues = false;
 
             // Skip unused/missing checks in --only-extras mode (Knip handles these)
             if (!onlyExtras) {
-                if (result.unused.length > 0) {
+                if (unused.length > 0) {
                     if (!compact) {
                         console.log(chalk.yellow('   ⚠ Unused dependencies:'));
-                        result.unused.forEach((dep) => console.log(chalk.yellow(`     - ${dep}`)));
+                        unused.forEach((dep) => console.log(chalk.yellow(`     - ${dep}`)));
                     } else {
-                        result.unused.forEach((dep) => compactIssues.push({
+                        unused.forEach((dep) => compactIssues.push({
                             package: pkg.name,
                             type: 'unused',
                             dependency: dep,
                         }));
                     }
-                    stats.unusedCount += result.unused.length;
+                    stats.unusedCount += unused.length;
                     packageHasIssues = true;
                 }
 
-                if (result.missing.length > 0) {
+                if (missing.length > 0) {
                     if (!compact) {
                         console.log(chalk.red('   ✗ Missing dependencies:'));
-                        result.missing.forEach((dep) => console.log(chalk.red(`     - ${dep}`)));
+                        missing.forEach((dep) => console.log(chalk.red(`     - ${dep}`)));
                     } else {
-                        result.missing.forEach((dep) => compactIssues.push({
+                        missing.forEach((dep) => compactIssues.push({
                             package: pkg.name,
                             type: 'missing',
                             dependency: dep,
                         }));
                     }
-                    stats.missingCount += result.missing.length;
+                    stats.missingCount += missing.length;
                     packageHasIssues = true;
                 }
             }
 
-            if (result.wrongType.length > 0) {
+            if (wrongType.length > 0) {
                 if (!compact) {
                     console.log(chalk.magenta('   ⚡ Wrong dependency types:'));
-                    result.wrongType.forEach((info) =>
+                    wrongType.forEach((info) =>
                         console.log(chalk.magenta(`     - ${info.dependency}: Should be in ${chalk.bold(info.expected)} (found in ${info.actual})`))
                     );
                 } else {
-                    result.wrongType.forEach((info) => compactIssues.push({
+                    wrongType.forEach((info) => compactIssues.push({
                         package: pkg.name,
                         type: 'wrongType',
                         dependency: info.dependency,
                         detail: `${info.actual} -> ${info.expected}`,
                     }));
                 }
-                stats.wrongTypeCount += result.wrongType.length;
+                stats.wrongTypeCount += wrongType.length;
                 packageHasIssues = true;
             }
 
@@ -194,7 +200,9 @@ program
                     const outdated = await versionChecker.checkVersions(allDeps);
                     if (outdated.length > 0) {
                         const actuallyOutdated = outdated.filter(info => {
-                            return !info.current.includes(info.latest);
+                            const range = semver.validRange(info.current, { loose: true });
+                            if (!range) return true;
+                            return !semver.satisfies(info.latest, range, { includePrerelease: true, loose: true });
                         });
 
                         if (actuallyOutdated.length > 0) {
@@ -226,7 +234,7 @@ program
             }
 
             if (packageHasIssues) {
-                stats.packagesWithIssues++;
+                packagesWithIssues.add(pkg.name);
             }
         }
 
@@ -260,10 +268,6 @@ program
 
         // Check for internal package reference issues
         const internalChecker = new InternalChecker();
-        // Build a map of used imports per package (we need to collect this during analysis)
-        const usedImports = new Map<string, Set<string>>();
-        // For now, we can only check workspace: protocol usage, not actual imports
-        // The import tracking would require modifying the analyzer
         const internalIssues = internalChecker.check(packages, usedImports);
 
         if (internalIssues.length > 0) {
@@ -285,6 +289,9 @@ program
                 }
             }
             stats.internalCount = internalIssues.length;
+            for (const issue of internalIssues) {
+                packagesWithIssues.add(issue.packageName);
+            }
         }
 
         // Check for peer dependency issues
@@ -311,7 +318,18 @@ program
                 }
             }
             stats.peerCount = peerIssues.length;
+            for (const issue of peerIssues) {
+                packagesWithIssues.add(issue.packageName);
+            }
         }
+
+        for (const mismatch of mismatches) {
+            for (const v of mismatch.versions) {
+                v.packages.forEach((pkgName) => packagesWithIssues.add(pkgName));
+            }
+        }
+
+        stats.packagesWithIssues = packagesWithIssues.size;
 
         const totalIssues = stats.unusedCount + stats.missingCount + stats.wrongTypeCount + stats.outdatedCount + stats.mismatchCount + stats.internalCount + stats.peerCount;
 

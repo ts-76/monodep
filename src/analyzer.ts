@@ -13,6 +13,8 @@ export interface AnalysisResult {
         expected: 'dependencies' | 'devDependencies';
         actual: 'dependencies' | 'devDependencies';
     }[];
+    prodImports: Set<string>;
+    devImports: Set<string>;
 }
 
 export class Analyzer {
@@ -136,6 +138,8 @@ export class Analyzer {
             unused,
             missing,
             wrongType,
+            prodImports,
+            devImports,
         };
     }
 
