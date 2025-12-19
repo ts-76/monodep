@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.1.11
+
+[compare changes](https://github.com/ts-76/monodep/compare/v0.1.10...v0.1.11)
+
+### 🩹 Fixes
+
+- Move typescript back to dependencies for runtime parsing ([3db6511](https://github.com/ts-76/monodep/commit/3db6511))
+- Set package version to 0.1.10 ([5405363](https://github.com/ts-76/monodep/commit/5405363))
+
+### ❤️ Contributors
+
+- Tsukuruhito <ts.createlink@gmail.com>
+
 ## v0.1.10
 
 [compare changes](https://github.com/ts-76/monodep/compare/list...v0.1.10)
