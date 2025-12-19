@@ -1,6 +1,6 @@
 {
     "name": "monodep",
-    "version": "0.1.10",
+    "version": "0.1.11",
     "description": "A dependency check tool for monorepos",
     "author": "ts-76",
     "license": "MIT",
@@ -36,14 +36,14 @@
         "glob": "^13.0.0",
         "js-yaml": "^4.1.1",
         "lilconfig": "^3.1.3",
-        "semver": "^7.7.3"
+        "semver": "^7.7.3",
+        "typescript": "^5.9.3"
     },
     "devDependencies": {
         "@types/js-yaml": "^4.0.9",
         "@types/node": "^24.10.1",
         "@types/semver": "^7.7.1",
         "changelogen": "^0.6.2",
-        "rolldown": "^1.0.0-beta.55",
-        "typescript": "^5.9.3"
+        "rolldown": "^1.0.0-beta.55"
     }
 }
