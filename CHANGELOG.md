@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.1.12
+
+[compare changes](https://github.com/ts-76/monodep/compare/v0.1.11...v0.1.12)
+
+### 🚀 Enhancements
+
+- Add production and development imports tracking to analysis results ([c56ac51](https://github.com/ts-76/monodep/commit/c56ac51))
+
 ## v0.1.11
 
 [compare changes](https://github.com/ts-76/monodep/compare/v0.1.10...v0.1.11)
