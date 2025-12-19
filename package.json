@@ -1,6 +1,6 @@
 {
     "name": "monodep",
-    "version": "0.1.9",
+    "version": "0.1.10",
     "description": "A dependency check tool for monorepos",
     "author": "ts-76",
     "license": "MIT",

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.1.10
+
+[compare changes](https://github.com/ts-76/monodep/compare/list...v0.1.10)
+
+### 📦 Build
+
+- Configure rolldown to exclude external modules and add a shebang, and update package.json's bin entry and dev dependencies. ([a689ce4](https://github.com/ts-76/monodep/commit/a689ce4))
+
+### ❤️ Contributors
+
+- Tsukuruhito <ts.createlink@gmail.com>
+
 ## v0.1.9
 
 [compare changes](https://github.com/ts-76/monodep/compare/v0.1.8...v0.1.9)
