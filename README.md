@@ -1,10 +1,18 @@
 # monodep
 
-A dependency check tool designed for monorepos. It analyzes your project to find unused, missing, misplaced, and outdated dependencies, supporting nested packages and various package managers.
+A monorepo dependency analyzer that complements Knip and modernizes depcheck-style checks. monodep focuses on dependency hygiene gaps that are common in real-world workspaces.
 
 ## Why monodep?
 
 There are many excellent tools for managing JavaScript dependencies. Here's how monodep compares:
+
+### Positioning
+
+monodep is designed as a **gap-filler**, not a replacement for every tool:
+
+- Use **Knip** as your primary dead-code and unused-export detector.
+- Use **monodep** to enforce dependency hygiene that Knip/depcheck typically do not own (dependency type correctness, cross-workspace version consistency, internal workspace protocol correctness, and peer dependency validation).
+- If you currently rely on **depcheck-like unused/missing checks**, monodep keeps that baseline while extending it for modern monorepo needs.
 
 | Feature | Knip | depcheck | syncpack | Dependabot | dependency-cruiser | monodep |
 |---------|------|----------|----------|------------|--------------------|---------|
@@ -21,19 +29,27 @@ There are many excellent tools for managing JavaScript dependencies. Here's how 
 | Monorepo support | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Plugin ecosystem | ✅ (70+) | ✅ | ❌ | ❌ | ✅ | ❌ |
 
-### monodep-Specific Features
+### monodep Gap-Filling Features
 
-- **Wrong dependency type detection**: Identifies when a production dependency should be in devDependencies (e.g., test utilities in dependencies) or vice versa.
-- **Version mismatch detection**: Finds when the same package has different versions across your monorepo packages.
-- **Internal package validation**: Ensures internal workspace packages use `workspace:*` protocol and are properly referenced.
-- **Peer dependency validation**: Validates that peer dependencies are properly provided by host packages.
+- **Wrong dependency type detection**: Catches dependencies that should be in `devDependencies` but are in `dependencies` (and vice versa).
+- **Version mismatch detection**: Finds inconsistent versions of the same dependency across workspaces.
+- **Internal package validation**: Ensures internal workspace imports are declared and use `workspace:*` (or `file:`) protocol.
+- **Peer dependency validation**: Checks declared peer requirements against what consuming/root packages provide.
 
 ### Recommended Usage
 
-- Use **Knip** for dead code detection (unused exports, files, dependencies)
-- Use **dependency-cruiser** for circular dependency detection
-- Use **monodep** with `--only-extras` for wrongType, mismatch, outdated, internal, and peer checks
-- Or use **monodep** standalone for complete dependency analysis
+- Use **Knip** for dead code detection (unused exports/files/dependencies).
+- Use **dependency-cruiser** for circular dependency analysis.
+- Use **monodep --only-extras** to run the checks Knip does not target (`wrongType`, `mismatch`, `outdated`, `internal`, `peer`).
+- Use monodep standalone when you also want depcheck-style `unused`/`missing` checks in one command.
+
+### Scope Boundaries
+
+To keep expectations clear, monodep currently prioritizes deterministic static analysis and repository metadata.
+
+- **In scope**: package manifest consistency, import-based dependency presence, workspace protocol correctness, peer requirement validation, and registry version freshness checks.
+- **Partially in scope**: dynamic/runtime-only dependency resolution patterns (these may need explicit ignores or future advanced detection).
+- **Out of scope**: circular dependency graphs, unused exports/files auto-fix workflows.
 
 ## Features
 
@@ -103,6 +119,8 @@ npx monodep .
 | `--compact` | Output compact log format for AI agents and CI pipelines |
 | `--only-extras` | Only run checks not covered by Knip (wrongType, mismatch, outdated, internal, peer) |
 | `--no-outdated` | Skip outdated dependency checks for faster execution |
+| `--check-installed-peers` | Validate peer requirements from installed dependencies in `node_modules` |
+| `--ownership-report` | Show workspace dependency ownership suggestions (informational) |
 
 ### Output Example
 
@@ -215,7 +233,11 @@ Create a configuration file in your project root. Supported formats:
   "ignorePatterns": ["**/generated/**", "**/fixtures/**"],
   "ignoreDependencies": ["some-optional-peer-dep"],
   "skipPackages": ["@myorg/internal-tools"],
-  "checkOutdated": true
+  "checkOutdated": true,
+  "dynamicImportPolicy": "off",
+  "checkInstalledPeers": false,
+  "ownershipReport": false,
+  "ownershipPolicy": "root-shared"
 }
 ```
 
@@ -225,6 +247,10 @@ Create a configuration file in your project root. Supported formats:
 | `ignoreDependencies` | `string[]` | Dependencies to exclude from unused/missing checks |
 | `skipPackages` | `string[]` | Package names to skip entirely |
 | `checkOutdated` | `boolean` | Enable/disable outdated dependency checking (default: `true`) |
+| `dynamicImportPolicy` | `'off' \| 'warn' \| 'strict'` | Dynamic import candidate handling (`off`: hidden, `warn`: report only, `strict`: report + non-zero exit) |
+| `checkInstalledPeers` | `boolean` | Enable installed peer verification (default: `false`) |
+| `ownershipReport` | `boolean` | Enable ownership report output (default: `false`) |
+| `ownershipPolicy` | `'root-shared' \| 'workspace-explicit'` | Ownership preference used by `--ownership-report` |
 
 ## How it Works
 
