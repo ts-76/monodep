@@ -9,6 +9,7 @@ import { ConfigLoader } from './config';
 import { ConsistencyChecker } from './consistency';
 import { InternalChecker } from './internal-checker';
 import { PeerChecker } from './peer-checker';
+import { OwnershipChecker } from './ownership-checker';
 
 interface Stats {
     packagesScanned: number;
@@ -20,11 +21,14 @@ interface Stats {
     mismatchCount: number;
     internalCount: number;
     peerCount: number;
+    dynamicCount: number;
+    installedPeerCount: number;
+    ownershipCount: number;
 }
 
 interface CompactIssue {
     package: string;
-    type: 'unused' | 'missing' | 'wrongType' | 'outdated' | 'mismatch' | 'internal' | 'peer';
+    type: 'unused' | 'missing' | 'wrongType' | 'outdated' | 'mismatch' | 'internal' | 'peer' | 'dynamic' | 'installed-peer' | 'ownership';
     dependency: string;
     detail?: string;
 }
@@ -39,11 +43,15 @@ program
     .option('--compact', 'Output compact log for AI agents')
     .option('--only-extras', 'Only run checks not covered by Knip (wrongType, mismatch, outdated, internal, peer)')
     .option('--no-outdated', 'Skip outdated dependency checks (faster execution)')
+    .option('--check-installed-peers', 'Validate peer requirements from installed dependencies in node_modules')
+    .option('--ownership-report', 'Show dependency ownership suggestions across workspaces (informational)')
     .action(async (directory, options) => {
         const rootDir = path.resolve(directory);
         const compact = options.compact;
         const onlyExtras = options.onlyExtras;
         const skipOutdated = options.outdated === false;
+        const checkInstalledPeersFlag = options.checkInstalledPeers === true;
+        const ownershipReportFlag = options.ownershipReport === true;
 
         if (!compact) {
             const modeLabel = onlyExtras ? ' (extras only)' : '';
@@ -57,6 +65,12 @@ program
 
         const configLoader = new ConfigLoader();
         const config = await configLoader.load(rootDir);
+        const dynamicImportPolicy = config.dynamicImportPolicy === 'warn' || config.dynamicImportPolicy === 'strict'
+            ? config.dynamicImportPolicy
+            : 'off';
+        const checkInstalledPeers = checkInstalledPeersFlag || config.checkInstalledPeers === true;
+        const ownershipReport = ownershipReportFlag || config.ownershipReport === true;
+        const ownershipPolicy = config.ownershipPolicy === 'workspace-explicit' ? 'workspace-explicit' : 'root-shared';
 
         const monorepo = new MonorepoManager(rootDir);
         const packages = await monorepo.getPackages();
@@ -68,6 +82,8 @@ program
         const analyzer = new Analyzer();
         const versionChecker = new VersionChecker();
         const usedImports = new Map<string, Set<string>>();
+        const prodImportsByPackage = new Map<string, Set<string>>();
+        const devImportsByPackage = new Map<string, Set<string>>();
         const packagesWithIssues = new Set<string>();
 
         const stats: Stats = {
@@ -80,6 +96,9 @@ program
             mismatchCount: 0,
             internalCount: 0,
             peerCount: 0,
+            dynamicCount: 0,
+            installedPeerCount: 0,
+            ownershipCount: 0,
         };
 
         const compactIssues: CompactIssue[] = [];
@@ -137,9 +156,11 @@ program
             ];
 
             const result = await analyzer.analyze(pkg, ignorePatterns, config.ignoreDependencies);
-            const { unused, missing, wrongType, prodImports, devImports } = result;
+            const { unused, missing, wrongType, dynamicCandidates, prodImports, devImports } = result;
             const allImports = new Set<string>([...prodImports, ...devImports]);
             usedImports.set(pkg.name, allImports);
+            prodImportsByPackage.set(pkg.name, prodImports);
+            devImportsByPackage.set(pkg.name, devImports);
 
             let packageHasIssues = false;
 
@@ -192,6 +213,34 @@ program
                 }
                 stats.wrongTypeCount += wrongType.length;
                 packageHasIssues = true;
+            }
+
+            if (dynamicImportPolicy !== 'off' && dynamicCandidates.length > 0) {
+                if (!compact) {
+                    const label = dynamicImportPolicy === 'strict'
+                        ? '   ⚠ Dynamic import candidates (strict):'
+                        : '   ℹ Dynamic import candidates:';
+                    console.log(chalk.blue(label));
+                    dynamicCandidates.forEach((candidate) => {
+                        const relFile = path.relative(pkg.location, candidate.file);
+                        console.log(chalk.blue(`     - ${relFile}:${candidate.line} (${candidate.expression})`));
+                    });
+                } else {
+                    dynamicCandidates.forEach((candidate) => {
+                        const relFile = path.relative(pkg.location, candidate.file);
+                        compactIssues.push({
+                            package: pkg.name,
+                            type: 'dynamic',
+                            dependency: candidate.expression,
+                            detail: `${relFile}:${candidate.line}`,
+                        });
+                    });
+                }
+
+                stats.dynamicCount += dynamicCandidates.length;
+                if (dynamicImportPolicy === 'strict') {
+                    packageHasIssues = true;
+                }
             }
 
             if (checkOutdated) {
@@ -323,6 +372,68 @@ program
             }
         }
 
+        if (checkInstalledPeers) {
+            const installedPeerIssues = await peerChecker.checkInstalledPeers(packages, rootPkg);
+
+            if (installedPeerIssues.length > 0) {
+                if (!compact) {
+                    console.log(chalk.bold.cyan('🧩 Installed Peer Issues Found:'));
+                    for (const issue of installedPeerIssues) {
+                        console.log(chalk.cyan(`   ${issue.packageName}: ${issue.dependency} -> ${issue.peerDep}`));
+                        console.log(chalk.cyan(`     - ${issue.detail}`));
+                    }
+                    console.log('');
+                } else {
+                    for (const issue of installedPeerIssues) {
+                        compactIssues.push({
+                            package: issue.packageName,
+                            type: 'installed-peer',
+                            dependency: `${issue.dependency} -> ${issue.peerDep}`,
+                            detail: issue.detail,
+                        });
+                    }
+                }
+
+                stats.installedPeerCount = installedPeerIssues.length;
+                for (const issue of installedPeerIssues) {
+                    packagesWithIssues.add(issue.packageName);
+                }
+            }
+        }
+
+        if (ownershipReport) {
+            const ownershipChecker = new OwnershipChecker();
+            const ownershipIssues = ownershipChecker.check(
+                packages,
+                rootDir,
+                prodImportsByPackage,
+                devImportsByPackage,
+                ownershipPolicy
+            );
+
+            if (ownershipIssues.length > 0) {
+                if (!compact) {
+                    console.log(chalk.bold.blue(`🧭 Ownership Suggestions (${ownershipPolicy}):`));
+                    for (const issue of ownershipIssues) {
+                        console.log(chalk.blue(`   ${issue.dependency} [${issue.usage}]`));
+                        console.log(chalk.blue(`     - ${issue.detail}`));
+                    }
+                    console.log('');
+                } else {
+                    for (const issue of ownershipIssues) {
+                        compactIssues.push({
+                            package: '*',
+                            type: 'ownership',
+                            dependency: issue.dependency,
+                            detail: `${issue.type} ${issue.usage}: ${issue.packages.join(',')}`,
+                        });
+                    }
+                }
+
+                stats.ownershipCount = ownershipIssues.length;
+            }
+        }
+
         for (const mismatch of mismatches) {
             for (const v of mismatch.versions) {
                 v.packages.forEach((pkgName) => packagesWithIssues.add(pkgName));
@@ -331,7 +442,8 @@ program
 
         stats.packagesWithIssues = packagesWithIssues.size;
 
-        const totalIssues = stats.unusedCount + stats.missingCount + stats.wrongTypeCount + stats.outdatedCount + stats.mismatchCount + stats.internalCount + stats.peerCount;
+        const dynamicIssueCount = dynamicImportPolicy === 'strict' ? stats.dynamicCount : 0;
+        const totalIssues = stats.unusedCount + stats.missingCount + stats.wrongTypeCount + stats.outdatedCount + stats.mismatchCount + stats.internalCount + stats.peerCount + stats.installedPeerCount + dynamicIssueCount;
 
         if (compact) {
             // Compact output for AI agents
@@ -371,6 +483,19 @@ program
             }
             if (stats.peerCount > 0) {
                 console.log(chalk.cyan(`   🔗 Peer:        ${stats.peerCount}`));
+            }
+            if (stats.installedPeerCount > 0) {
+                console.log(chalk.cyan(`   🧩 Installed:   ${stats.installedPeerCount}`));
+            }
+            if (stats.dynamicCount > 0) {
+                const dynamicLabel = dynamicImportPolicy === 'strict' ? '   ⚠ Dynamic:     ' : '   ℹ Dynamic:     ';
+                const dynamicValue = dynamicImportPolicy === 'strict'
+                    ? chalk.yellow(stats.dynamicCount)
+                    : chalk.gray(`${stats.dynamicCount} (informational)`);
+                console.log(`${dynamicLabel}${dynamicValue}`);
+            }
+            if (stats.ownershipCount > 0) {
+                console.log(chalk.gray(`   🧭 Ownership:   ${stats.ownershipCount} (informational)`));
             }
 
             if (totalIssues === 0) {

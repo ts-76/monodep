@@ -13,6 +13,11 @@ export interface AnalysisResult {
         expected: 'dependencies' | 'devDependencies';
         actual: 'dependencies' | 'devDependencies';
     }[];
+    dynamicCandidates: {
+        file: string;
+        line: number;
+        expression: string;
+    }[];
     prodImports: Set<string>;
     devImports: Set<string>;
 }
@@ -33,9 +38,18 @@ export class Analyzer {
 
         const prodImports = new Set<string>();
         const devImports = new Set<string>();
+        const dynamicCandidates: AnalysisResult['dynamicCandidates'] = [];
 
         for (const { file, isDev } of scanResults) {
             const parsedImports = this.parser.parse(file);
+
+            for (const candidate of parsedImports.dynamicCandidates) {
+                dynamicCandidates.push({
+                    file,
+                    line: candidate.line,
+                    expression: candidate.expression,
+                });
+            }
 
             // Runtime (value) imports
             for (const imp of parsedImports.valueImports) {
@@ -138,6 +152,7 @@ export class Analyzer {
             unused,
             missing,
             wrongType,
+            dynamicCandidates,
             prodImports,
             devImports,
         };
