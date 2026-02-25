@@ -28,6 +28,7 @@
         "build": "rolldown -c",
         "build:types": "tsc --emitDeclarationOnly",
         "start": "node dist/index.js",
+        "test": "npm run build && node --test test/**/*.test.mjs",
         "release": "changelogen --release --no-authors",
         "lint": "echo 'No lint command specified'"
     },
