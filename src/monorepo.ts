@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { glob } from 'glob';
-import yaml from 'js-yaml';
+import { glob } from 'tinyglobby';
+import { parseYAML } from 'confbox';
 
 export interface PackageInfo {
     name: string;
@@ -21,18 +21,27 @@ export class MonorepoManager {
 
     async getPackages(): Promise<PackageInfo[]> {
         const workspacePatterns = await this.getWorkspacePatterns();
+        const workspacePackageJsonGlobs = workspacePatterns.map((pattern) => {
+            const normalized = pattern.split(path.sep).join('/').replace(/\\/g, '/');
+            return `${normalized.replace(/\/$/, '')}/package.json`;
+        });
         const packageJsonPaths = await glob(
-            workspacePatterns.map((p) => path.join(p, 'package.json')),
+            workspacePackageJsonGlobs,
             {
                 cwd: this.rootDir,
                 ignore: ['**/node_modules/**'],
                 absolute: true,
-            }
+            },
         );
 
         // Also include root package.json
         const rootPackageJsonPath = path.join(this.rootDir, 'package.json');
-        if (fs.existsSync(rootPackageJsonPath) && !packageJsonPaths.includes(rootPackageJsonPath)) {
+        const normalizeAbsolutePath = (inputPath: string): string =>
+            path.resolve(inputPath).split(path.sep).join('/').replace(/\\/g, '/').toLowerCase();
+
+        const normalizedDiscovered = new Set(packageJsonPaths.map((entry) => normalizeAbsolutePath(entry)));
+
+        if (fs.existsSync(rootPackageJsonPath) && !normalizedDiscovered.has(normalizeAbsolutePath(rootPackageJsonPath))) {
             packageJsonPaths.push(rootPackageJsonPath);
         }
 
@@ -64,7 +73,7 @@ export class MonorepoManager {
         if (fs.existsSync(pnpmWorkspacePath)) {
             try {
                 const content = fs.readFileSync(pnpmWorkspacePath, 'utf-8');
-                const doc = yaml.load(content) as { packages?: string[] };
+                const doc = parseYAML<{ packages?: string[] }>(content);
                 if (doc && Array.isArray(doc.packages)) {
                     return doc.packages;
                 }

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import path from 'path';
+import fs from 'fs';
 import chalk from 'chalk';
 import semver from 'semver';
 import { MonorepoManager } from './monorepo';
@@ -61,6 +62,25 @@ program
         const monorepo = new MonorepoManager(rootDir);
         const packages = await monorepo.getPackages();
 
+        const rootCatalog = (() => {
+            const rootPackagePath = path.join(rootDir, 'package.json');
+            try {
+                const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, 'utf-8')) as {
+                    catalog?: Record<string, string>;
+                };
+                return rootPackage.catalog || {};
+            } catch {
+                return {} as Record<string, string>;
+            }
+        })();
+
+        const resolveCatalogVersion = (depName: string, version: string): string | null => {
+            if (version === 'catalog:') {
+                return rootCatalog[depName] || null;
+            }
+            return version;
+        };
+
         if (!compact) {
             console.log(chalk.gray(`Found ${packages.length} packages.\n`));
         }
@@ -97,7 +117,9 @@ program
                 }
                 const deps = { ...pkg.dependencies, ...pkg.devDependencies };
                 for (const [depName, depVersion] of Object.entries(deps)) {
-                    if (!depVersion.startsWith('workspace:') && !depVersion.startsWith('file:')) {
+                    const normalizedVersion = resolveCatalogVersion(depName, depVersion);
+                    if (!normalizedVersion) continue;
+                    if (!normalizedVersion.startsWith('workspace:') && !normalizedVersion.startsWith('file:')) {
                         allDependencies.add(depName);
                     }
                 }
@@ -125,10 +147,14 @@ program
 
             // Find other packages that are nested within this package
             const nestedPackages = packages.filter(
-                (other) => other.location !== pkg.location && other.location.startsWith(pkg.location)
+                (other) => {
+                    if (other.location === pkg.location) return false;
+                    const relative = path.relative(pkg.location, other.location);
+                    return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+                }
             );
             const nestedPackagePatterns = nestedPackages.map((nested) =>
-                path.relative(pkg.location, nested.location) + '/**'
+                `${path.relative(pkg.location, nested.location).split(path.sep).join('/')}/**`
             );
 
             const ignorePatterns = [
@@ -197,7 +223,15 @@ program
             if (checkOutdated) {
                 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
                 if (Object.keys(allDeps).length > 0) {
-                    const outdated = await versionChecker.checkVersions(allDeps);
+                    const normalizedDeps: Record<string, string> = {};
+                    for (const [depName, version] of Object.entries(allDeps)) {
+                        const normalizedVersion = resolveCatalogVersion(depName, version);
+                        if (normalizedVersion) {
+                            normalizedDeps[depName] = normalizedVersion;
+                        }
+                    }
+
+                    const outdated = await versionChecker.checkVersions(normalizedDeps);
                     if (outdated.length > 0) {
                         const actuallyOutdated = outdated.filter(info => {
                             const range = semver.validRange(info.current, { loose: true });
@@ -240,7 +274,9 @@ program
 
         // Check for version mismatches
         const consistencyChecker = new ConsistencyChecker();
-        const mismatches = consistencyChecker.check(packages);
+        const mismatches = consistencyChecker.check(packages, (dep, version) => {
+            return resolveCatalogVersion(dep, version);
+        });
 
         if (mismatches.length > 0) {
             if (!compact) {

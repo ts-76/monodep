@@ -226,15 +226,57 @@ Create a configuration file in your project root. Supported formats:
 | `skipPackages` | `string[]` | Package names to skip entirely |
 | `checkOutdated` | `boolean` | Enable/disable outdated dependency checking (default: `true`) |
 
+## Detection Logic
+
+### Target Files
+
+monodep detects dependency usage from these files in each package:
+
+- **Source files**: `**/*.{ts,tsx,js,jsx,mjs,cjs}`
+  - Excludes `node_modules`, `dist`, `build`, `coverage`, `fixtures`, `*.d.ts`, and nested workspace package paths.
+- **CSS files**: `**/*.css`
+  - Scans `@plugin "..."` and `@import "..."` directives for package usage.
+- **Package config**: `package.json`
+  - Scans `scripts` for common CLI tools (e.g. `vite`, `wrangler`, `cross-env`, `tsc`, `tsdown`, `tailwindcss`).
+- **TypeScript config**: `tsconfig.json`
+  - Reads `compilerOptions.types` and maps entries like `vite/client` to package name `vite`.
+  - If `tsconfig.json` exists, `typescript` is treated as toolchain usage.
+- **Bun config**: `bunfig.toml`
+  - Scans `install.security.scanner` (e.g. `@socketsecurity/bun-security-scanner`).
+
+### Detection Rules
+
+- **Import parsing**:
+  - Runtime imports are treated as production usage.
+  - `import type` and type-only imports are treated as development usage.
+- **Ignored import specifiers**:
+  - Relative paths (`./`, `../`) and absolute file paths.
+  - Runtime/builtin schemes and virtual modules such as `bun:*`, `node:*`, `cloudflare:*`, `data:*`, `file:*`.
+- **Unused dependencies**:
+  - A dependency is `unused` if it is not referenced by source imports or config-derived usage.
+- **Missing dependencies**:
+  - A referenced package is `missing` if it is not listed in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`.
+- **Wrong dependency type**:
+  - `devDependencies` used in production code should move to `dependencies`.
+  - `dependencies` used only in dev context should move to `devDependencies`.
+- **Catalog/version resolution**:
+  - `catalog:` is resolved using root `package.json` `catalog` before outdated/mismatch checks.
+  - `workspace:` and `file:` specs are excluded from outdated/mismatch checks.
+- **Outdated dependencies**:
+  - Compares declared semver range against npm latest version.
+  - Reports only when latest does not satisfy the declared range.
+- **Version mismatch**:
+  - Compares normalized versions across packages and reports when the same dependency has multiple distinct versions.
+
 ## How it Works
 
-1. **Monorepo Detection**: It looks for `workspaces` in `package.json` or `packages` in `pnpm-workspace.yaml` to identify all packages in the monorepo.
-2. **File Scanning**: For each package, it scans for source files (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`), excluding `node_modules`, `dist`, `build`, and nested sub-packages.
-3. **Import Parsing**: It parses the source files using TypeScript's parser to find all import statements.
-4. **Dependency Comparison**: It compares the found imports against the `dependencies`, `devDependencies`, and `peerDependencies` listed in the package's `package.json`.
-5. **Type Classification**: It detects whether imports are used in production code or test files to identify wrong dependency types.
-6. **Version Checking**: It queries the npm registry to find the latest versions of dependencies. Optimized with deduplication, caching, and parallel requests (max 10 concurrent) to minimize registry load.
-7. **Consistency Check**: It compares dependency versions across all packages to find mismatches.
+1. **Monorepo detection**: Reads `workspaces` from `package.json` (or `pnpm-workspace.yaml`) and resolves package boundaries.
+2. **Per-package scan**: Collects dependency usage from source files and config files listed in **Detection Logic**.
+3. **Usage analysis**: Classifies references into production/dev usage and applies ignore rules (including virtual module specifiers).
+4. **Dependency checks**: Computes `unused`, `missing`, and `wrongType` by comparing detected usage with declared dependencies.
+5. **Cross-package checks**: Resolves `catalog:` values, runs `outdated` checks against npm, and reports version `mismatch`, internal, and peer issues.
+
+For exact file patterns and matching rules, see **Detection Logic** above.
 
 ## Performance
 

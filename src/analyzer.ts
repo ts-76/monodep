@@ -1,4 +1,6 @@
 import path from 'path';
+import fs from 'fs';
+import { glob } from 'tinyglobby';
 import { PackageInfo } from './monorepo';
 import { Scanner } from './scanner';
 import { Parser } from './parser';
@@ -33,6 +35,7 @@ export class Analyzer {
 
         const prodImports = new Set<string>();
         const devImports = new Set<string>();
+        const configImports = await this.collectConfigDependencies(pkg.location, ignorePatterns);
 
         for (const { file, isDev } of scanResults) {
             const parsedImports = this.parser.parse(file);
@@ -41,6 +44,7 @@ export class Analyzer {
             for (const imp of parsedImports.valueImports) {
                 if (imp.startsWith('.')) continue; // Relative import
                 if (path.isAbsolute(imp)) continue; // Absolute path (rare in imports)
+                if (this.isVirtualImportSpecifier(imp)) continue;
 
                 if (this.isRuntimeBuiltinImportSpecifier(imp)) continue;
 
@@ -60,6 +64,7 @@ export class Analyzer {
             for (const imp of parsedImports.typeOnlyImports) {
                 if (imp.startsWith('.')) continue;
                 if (path.isAbsolute(imp)) continue;
+                if (this.isVirtualImportSpecifier(imp)) continue;
 
                 if (this.isRuntimeBuiltinImportSpecifier(imp)) continue;
 
@@ -80,6 +85,7 @@ export class Analyzer {
         const optionalDeps = pkg.optionalDependencies || {};
 
         const allDeps = { ...deps, ...devDeps, ...peerDeps, ...optionalDeps };
+        const usedImports = new Set([...prodImports, ...devImports, ...configImports]);
 
         const unused: string[] = [];
         for (const dep of Object.keys(allDeps)) {
@@ -87,13 +93,13 @@ export class Analyzer {
             if (dep.startsWith('@types/')) continue;
             if (ignoreDependencies.includes(dep)) continue;
 
-            if (!prodImports.has(dep) && !devImports.has(dep)) {
+            if (!usedImports.has(dep)) {
                 unused.push(dep);
             }
         }
 
         const missing: string[] = [];
-        const allImports = new Set([...prodImports, ...devImports]);
+        const allImports = usedImports;
 
         for (const imp of allImports) {
             if (ignoreDependencies.includes(imp)) continue;
@@ -173,5 +179,109 @@ export class Analyzer {
         if (importPath === 'bun') return true;
         if (importPath.startsWith('bun:')) return true;
         return false;
+    }
+
+    private isVirtualImportSpecifier(importPath: string): boolean {
+        // Runtime/virtual module schemes are not npm package names.
+        // e.g. cloudflare:workers, node:path, data:..., file:...
+        return /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(importPath);
+    }
+
+    private async collectConfigDependencies(packageLocation: string, ignorePatterns: string[] = []): Promise<Set<string>> {
+        const dependencies = new Set<string>();
+        const bunfigPath = path.join(packageLocation, 'bunfig.toml');
+        const packageJsonPath = path.join(packageLocation, 'package.json');
+        const tsconfigPath = path.join(packageLocation, 'tsconfig.json');
+        const normalizedIgnorePatterns = ignorePatterns.map((pattern) =>
+            pattern.split(path.sep).join('/').replace(/\\/g, '/')
+        );
+
+        if (fs.existsSync(bunfigPath)) {
+            try {
+                const content = fs.readFileSync(bunfigPath, 'utf-8');
+
+                const scannerMatch = content.match(/(^|\n)\s*scanner\s*=\s*["']([^"']+)["']/m);
+                if (scannerMatch?.[2]) {
+                    dependencies.add(scannerMatch[2]);
+                }
+            } catch (e) {
+                console.warn(`Failed to parse ${bunfigPath}:`, e);
+            }
+        }
+
+        if (fs.existsSync(packageJsonPath)) {
+            try {
+                const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as {
+                    scripts?: Record<string, string>;
+                };
+
+                const scriptsText = Object.values(packageJson.scripts || {}).join(' \n ');
+                const cliToolMappings: Record<string, RegExp> = {
+                    vite: /(^|\s|&&|\|\|)vite(\s|$)/,
+                    wrangler: /(^|\s|&&|\|\|)wrangler(\s|$)/,
+                    'cross-env': /(^|\s|&&|\|\|)cross-env(\s|$)/,
+                    typescript: /(^|\s|&&|\|\|)tsc(\s|$)/,
+                    tsdown: /(^|\s|&&|\|\|)tsdown(\s|$)/,
+                    tailwindcss: /(^|\s|&&|\|\|)tailwindcss(\s|$)/,
+                };
+
+                for (const [dep, pattern] of Object.entries(cliToolMappings)) {
+                    if (pattern.test(scriptsText)) {
+                        dependencies.add(dep);
+                    }
+                }
+            } catch (e) {
+                console.warn(`Failed to parse ${packageJsonPath}:`, e);
+            }
+        }
+
+        if (fs.existsSync(tsconfigPath)) {
+            dependencies.add('typescript');
+
+            try {
+                const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf-8')) as {
+                    compilerOptions?: { types?: string[] };
+                };
+
+                for (const typePkg of tsconfig.compilerOptions?.types || []) {
+                    const normalizedTypePkg = this.getPackageName(typePkg) || typePkg;
+                    dependencies.add(normalizedTypePkg);
+                }
+            } catch {
+                // tsconfig may contain comments; ignore parse failures
+            }
+        }
+
+        try {
+            const cssFiles = await glob(['**/*.css'], {
+                cwd: packageLocation,
+                ignore: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.wrangler/**', ...normalizedIgnorePatterns],
+                absolute: true,
+            });
+
+            for (const cssFile of cssFiles) {
+                const content = fs.readFileSync(cssFile, 'utf-8');
+
+                const pluginRegex = /@plugin\s+["']([^"']+)["']/g;
+                let pluginMatch: RegExpExecArray | null;
+                while ((pluginMatch = pluginRegex.exec(content)) !== null) {
+                    const dep = this.getPackageName(pluginMatch[1]) || pluginMatch[1];
+                    if (dep) dependencies.add(dep);
+                }
+
+                const importRegex = /@import\s+["']([^"']+)["']/g;
+                let importMatch: RegExpExecArray | null;
+                while ((importMatch = importRegex.exec(content)) !== null) {
+                    const specifier = importMatch[1];
+                    if (specifier.startsWith('.') || specifier.startsWith('/')) continue;
+                    const dep = this.getPackageName(specifier) || specifier;
+                    if (dep) dependencies.add(dep);
+                }
+            }
+        } catch {
+            // Ignore CSS scanning failures
+        }
+
+        return dependencies;
     }
 }

@@ -9,15 +9,21 @@ export interface MismatchResult {
 }
 
 export class ConsistencyChecker {
-    check(packages: PackageInfo[]): MismatchResult[] {
+    check(
+        packages: PackageInfo[],
+        resolveVersion?: (dependency: string, version: string, packageName: string) => string | null,
+    ): MismatchResult[] {
         const dependencyMap = new Map<string, Map<string, string[]>>();
 
         for (const pkg of packages) {
             const allDeps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
 
             for (const [dep, version] of Object.entries(allDeps)) {
+                const normalizedVersion = resolveVersion ? resolveVersion(dep, version, pkg.name) : version;
+                if (!normalizedVersion) continue;
+
                 // Skip workspace protocols and file paths as they are local
-                if (version.startsWith('workspace:') || version.startsWith('file:')) {
+                if (normalizedVersion.startsWith('workspace:') || normalizedVersion.startsWith('file:')) {
                     continue;
                 }
 
@@ -26,10 +32,10 @@ export class ConsistencyChecker {
                 }
 
                 const versionMap = dependencyMap.get(dep)!;
-                if (!versionMap.has(version)) {
-                    versionMap.set(version, []);
+                if (!versionMap.has(normalizedVersion)) {
+                    versionMap.set(normalizedVersion, []);
                 }
-                versionMap.get(version)!.push(pkg.name);
+                versionMap.get(normalizedVersion)!.push(pkg.name);
             }
         }
 
