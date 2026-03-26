@@ -1,0 +1,10 @@
+{
+  "name": "installed-peer-fixture",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "needs-react17": "1.0.0",
+    "needs-typescript": "1.0.0",
+    "react": "18.2.0"
+  }
+}

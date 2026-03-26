@@ -5,6 +5,10 @@ export interface DepcheckConfig {
     ignoreDependencies?: string[];
     skipPackages?: string[];
     checkOutdated?: boolean;
+    dynamicImportPolicy?: 'off' | 'warn' | 'strict';
+    checkInstalledPeers?: boolean;
+    ownershipReport?: boolean;
+    ownershipPolicy?: 'root-shared' | 'workspace-explicit';
 }
 
 export class ConfigLoader {

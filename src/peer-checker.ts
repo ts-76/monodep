@@ -1,15 +1,20 @@
 import { PackageInfo } from './monorepo';
 import semver from 'semver';
+import fs from 'fs';
+import path from 'path';
+import { createRequire } from 'module';
 
 export interface PeerIssue {
     packageName: string;
     dependency: string;
     peerDep: string;
-    type: 'missing-peer' | 'incompatible-peer';
+    type: 'missing-peer' | 'incompatible-peer' | 'installed-missing-peer' | 'installed-incompatible-peer';
     detail: string;
 }
 
 export class PeerChecker {
+    private manifestCache = new Map<string, Record<string, unknown>>();
+
     /**
      * Check peer dependency requirements
      * - Detects missing peer dependencies
@@ -84,10 +89,104 @@ export class PeerChecker {
      * Check dependencies' peer requirements against what's installed
      * This reads the actual node_modules to check if dependencies have their peers satisfied
      */
-    async checkInstalledPeers(_pkg: PackageInfo): Promise<PeerIssue[]> {
-        // This would require reading node_modules/*/package.json
-        // For now, we focus on the simpler case of checking declared peerDependencies
-        return [];
+    async checkInstalledPeers(packages: PackageInfo[], rootPkg?: PackageInfo): Promise<PeerIssue[]> {
+        const issues: PeerIssue[] = [];
+        const maxResolvedManifests = 2000;
+        const timeoutMs = 8000;
+        const startedAt = Date.now();
+        let resolvedCount = 0;
+
+        for (const pkg of packages) {
+            if (Date.now() - startedAt > timeoutMs || resolvedCount >= maxResolvedManifests) {
+                break;
+            }
+
+            const localProvided = {
+                ...pkg.dependencies,
+                ...pkg.devDependencies,
+                ...pkg.peerDependencies,
+                ...pkg.optionalDependencies,
+            };
+
+            const rootProvided = rootPkg
+                ? {
+                    ...rootPkg.dependencies,
+                    ...rootPkg.devDependencies,
+                    ...rootPkg.peerDependencies,
+                    ...rootPkg.optionalDependencies,
+                }
+                : {};
+
+            const declaredDeps = {
+                ...pkg.dependencies,
+                ...pkg.devDependencies,
+                ...pkg.optionalDependencies,
+            };
+
+            const pkgRequire = createRequire(path.join(pkg.location, 'package.json'));
+
+            for (const depName of Object.keys(declaredDeps)) {
+                if (Date.now() - startedAt > timeoutMs || resolvedCount >= maxResolvedManifests) {
+                    break;
+                }
+
+                const manifest = this.resolveInstalledManifest(pkgRequire, depName);
+                if (!manifest) {
+                    continue;
+                }
+
+                resolvedCount++;
+
+                const peerDeps = (manifest.peerDependencies ?? {}) as Record<string, string>;
+                for (const [peerName, peerRange] of Object.entries(peerDeps)) {
+                    if (peerRange.startsWith('workspace:') || peerRange.startsWith('file:')) {
+                        continue;
+                    }
+
+                    const providedVersion = localProvided[peerName] ?? rootProvided[peerName];
+                    if (!providedVersion) {
+                        issues.push({
+                            packageName: pkg.name,
+                            dependency: depName,
+                            peerDep: peerName,
+                            type: 'installed-missing-peer',
+                            detail: `Installed dependency ${depName} requires peer ${peerName}@${peerRange}, but it is not installed in workspace/root`,
+                        });
+                        continue;
+                    }
+
+                    const cleanProvidedVersion = this.cleanVersion(providedVersion);
+                    if (cleanProvidedVersion && !this.satisfies(cleanProvidedVersion, peerRange)) {
+                        issues.push({
+                            packageName: pkg.name,
+                            dependency: depName,
+                            peerDep: peerName,
+                            type: 'installed-incompatible-peer',
+                            detail: `Installed dependency ${depName} requires ${peerName}@${peerRange}, but found ${providedVersion}`,
+                        });
+                    }
+                }
+            }
+        }
+
+        return issues;
+    }
+
+    private resolveInstalledManifest(pkgRequire: NodeJS.Require, depName: string): Record<string, unknown> | null {
+        try {
+            const resolvedPath = pkgRequire.resolve(`${depName}/package.json`);
+            const cached = this.manifestCache.get(resolvedPath);
+            if (cached) {
+                return cached;
+            }
+
+            const content = fs.readFileSync(resolvedPath, 'utf8');
+            const parsed = JSON.parse(content) as Record<string, unknown>;
+            this.manifestCache.set(resolvedPath, parsed);
+            return parsed;
+        } catch {
+            return null;
+        }
     }
 
     private cleanVersion(version: string): string | null {

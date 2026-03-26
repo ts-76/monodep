@@ -4,6 +4,10 @@ import fs from 'fs';
 export interface ParseResult {
     valueImports: string[];
     typeOnlyImports: string[];
+    dynamicCandidates: {
+        expression: string;
+        line: number;
+    }[];
 }
 
 export class Parser {
@@ -14,6 +18,7 @@ export class Parser {
 
             const valueImports = new Set<string>();
             const typeOnlyImports = new Set<string>();
+            const dynamicCandidates: ParseResult['dynamicCandidates'] = [];
 
             const recordImport = (moduleName: string, isTypeOnly: boolean) => {
                 if (!moduleName) return;
@@ -70,6 +75,12 @@ export class Parser {
                     const arg = node.arguments[0];
                     if (arg && isStringLiteral(arg)) {
                         recordImport(arg.text, false);
+                    } else if (arg) {
+                        const line = source.getLineAndCharacterOfPosition(arg.getStart(source)).line + 1;
+                        dynamicCandidates.push({
+                            expression: arg.getText(source),
+                            line,
+                        });
                     }
                     return;
                 }
@@ -79,10 +90,18 @@ export class Parser {
                     if (
                         ts.isIdentifier(node.expression) &&
                         node.expression.text === 'require' &&
-                        node.arguments.length === 1 &&
-                        isStringLiteral(node.arguments[0])
+                        node.arguments.length === 1
                     ) {
-                        recordImport((node.arguments[0] as ts.StringLiteral).text, false);
+                        const arg = node.arguments[0];
+                        if (isStringLiteral(arg)) {
+                            recordImport(arg.text, false);
+                        } else {
+                            const line = source.getLineAndCharacterOfPosition(arg.getStart(source)).line + 1;
+                            dynamicCandidates.push({
+                                expression: arg.getText(source),
+                                line,
+                            });
+                        }
                     }
                 }
 
@@ -94,10 +113,11 @@ export class Parser {
             return {
                 valueImports: [...valueImports],
                 typeOnlyImports: [...typeOnlyImports],
+                dynamicCandidates,
             };
         } catch (e) {
             console.warn(`Failed to parse ${filePath}:`, e);
-            return { valueImports: [], typeOnlyImports: [] };
+            return { valueImports: [], typeOnlyImports: [], dynamicCandidates: [] };
         }
     }
 }
