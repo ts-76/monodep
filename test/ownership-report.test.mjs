@@ -42,14 +42,3 @@ test('root-shared policy reports shared dependency not declared at root', () => 
   assert.match(result.stdout, /lodash/);
 });
 
-test('workspace-explicit policy reports root-declared dependency used without local declaration', () => {
-  const tmpDir = setupFixture({ ownershipPolicy: 'workspace-explicit', ownershipReport: true });
-  const result = spawnSync('node', [cliPath, tmpDir, '--compact', '--only-extras', '--no-outdated'], {
-    encoding: 'utf8',
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /\[ownership\]/);
-  assert.match(result.stdout, /chalk/);
-  assert.match(result.stdout, /@fixture\/a/);
-});

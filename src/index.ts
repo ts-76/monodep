@@ -71,7 +71,6 @@ program
             : 'off';
         const checkInstalledPeers = checkInstalledPeersFlag || config.checkInstalledPeers === true;
         const ownershipReport = ownershipReportFlag || config.ownershipReport === true;
-        const ownershipPolicy = config.ownershipPolicy === 'workspace-explicit' ? 'workspace-explicit' : 'root-shared';
 
         const monorepo = new MonorepoManager(rootDir);
         const packages = await monorepo.getPackages();
@@ -443,13 +442,12 @@ program
                 packages,
                 rootDir,
                 prodImportsByPackage,
-                devImportsByPackage,
-                ownershipPolicy
+                devImportsByPackage
             );
 
             if (ownershipIssues.length > 0) {
                 if (!compact) {
-                    console.log(chalk.bold.blue(`🧭 Ownership Suggestions (${ownershipPolicy}):`));
+                    console.log(chalk.bold.blue('🧭 Ownership Suggestions:'));
                     for (const issue of ownershipIssues) {
                         console.log(chalk.blue(`   ${issue.dependency} [${issue.usage}]`));
                         console.log(chalk.blue(`     - ${issue.detail}`));

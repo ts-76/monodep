@@ -236,8 +236,7 @@ Create a configuration file in your project root. Supported formats:
   "checkOutdated": true,
   "dynamicImportPolicy": "off",
   "checkInstalledPeers": false,
-  "ownershipReport": false,
-  "ownershipPolicy": "root-shared"
+  "ownershipReport": false
 }
 ```
 
@@ -250,7 +249,7 @@ Create a configuration file in your project root. Supported formats:
 | `dynamicImportPolicy` | `'off' \| 'warn' \| 'strict'` | Dynamic import candidate handling (`off`: hidden, `warn`: report only, `strict`: report + non-zero exit) |
 | `checkInstalledPeers` | `boolean` | Enable installed peer verification (default: `false`) |
 | `ownershipReport` | `boolean` | Enable ownership report output (default: `false`) |
-| `ownershipPolicy` | `'root-shared' \| 'workspace-explicit'` | Ownership preference used by `--ownership-report` |
+
 
 ## Detection Logic
 
