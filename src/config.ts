@@ -8,7 +8,6 @@ export interface DepcheckConfig {
     dynamicImportPolicy?: 'off' | 'warn' | 'strict';
     checkInstalledPeers?: boolean;
     ownershipReport?: boolean;
-    ownershipPolicy?: 'root-shared' | 'workspace-explicit';
 }
 
 export class ConfigLoader {

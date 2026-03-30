@@ -1,10 +1,8 @@
 import { PackageInfo } from './monorepo';
 
-export type OwnershipPolicy = 'root-shared' | 'workspace-explicit';
-
 export interface OwnershipIssue {
     dependency: string;
-    type: 'root-shared-candidate' | 'workspace-explicit-candidate';
+    type: 'root-shared-candidate';
     usage: 'prod' | 'dev' | 'mixed';
     packages: string[];
     detail: string;
@@ -15,8 +13,7 @@ export class OwnershipChecker {
         packages: PackageInfo[],
         rootDir: string,
         prodImportsByPackage: Map<string, Set<string>>,
-        devImportsByPackage: Map<string, Set<string>>,
-        policy: OwnershipPolicy
+        devImportsByPackage: Map<string, Set<string>>
     ): OwnershipIssue[] {
         const rootPkg = packages.find((pkg) => pkg.location === rootDir);
         const workspacePackages = packages.filter((pkg) => pkg.location !== rootDir);
@@ -73,34 +70,14 @@ export class OwnershipChecker {
                     ? 'prod'
                     : 'dev';
 
-            if (policy === 'root-shared') {
-                if (consumers.length >= 2 && !rootDeclarations.has(dependency)) {
-                    issues.push({
-                        dependency,
-                        type: 'root-shared-candidate',
-                        usage: usageKind,
-                        packages: consumers,
-                        detail: `Used by ${consumers.length} workspaces (${consumers.join(', ')}). Consider declaring at root for shared ownership policy.`,
-                    });
-                }
-                continue;
-            }
-
-            if (rootDeclarations.has(dependency)) {
-                const missingLocalDeclaration = consumers.filter((pkgName) => {
-                    const declared = declarationsByPackage.get(pkgName);
-                    return !declared || !declared.has(dependency);
+            if (consumers.length >= 2 && !rootDeclarations.has(dependency)) {
+                issues.push({
+                    dependency,
+                    type: 'root-shared-candidate',
+                    usage: usageKind,
+                    packages: consumers,
+                    detail: `Used by ${consumers.length} workspaces (${consumers.join(', ')}). Consider declaring at root for shared ownership policy.`,
                 });
-
-                if (missingLocalDeclaration.length > 0) {
-                    issues.push({
-                        dependency,
-                        type: 'workspace-explicit-candidate',
-                        usage: usageKind,
-                        packages: missingLocalDeclaration,
-                        detail: `Root declares ${dependency}, but workspace-explicit policy prefers local declarations in: ${missingLocalDeclaration.join(', ')}.`,
-                    });
-                }
             }
         }
 
