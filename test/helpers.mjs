@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 export const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const cliPath = path.join(repoRoot, 'dist', 'index.js');
@@ -24,4 +24,16 @@ export function runCli(args, options = {}) {
     env: { ...process.env, ...options.env },
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+/** Async variant for tests that need an in-process server to answer while the CLI runs. */
+export function runCliAsync(args, options = {}) {
+  return new Promise((resolve) => {
+    const child = spawn('node', [cliPath, ...args], { env: { ...process.env, ...options.env } });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => (stdout += chunk));
+    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+  });
 }

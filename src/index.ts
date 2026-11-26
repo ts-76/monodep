@@ -6,6 +6,7 @@ import semver from 'semver';
 import { MonorepoManager } from './monorepo';
 import { Analyzer } from './analyzer';
 import { VersionChecker } from './version-checker';
+import { resolveRegistryTarget } from './specifier';
 import { ConfigLoader } from './config';
 import { ConsistencyChecker } from './consistency';
 import { InternalChecker } from './internal-checker';
@@ -148,8 +149,9 @@ program
                 for (const [depName, depVersion] of Object.entries(deps)) {
                     const normalizedVersion = resolveCatalogVersion(depName, depVersion);
                     if (!normalizedVersion) continue;
-                    if (!normalizedVersion.startsWith('workspace:') && !normalizedVersion.startsWith('file:')) {
-                        allDependencies.add(depName);
+                    const target = resolveRegistryTarget(depName, normalizedVersion);
+                    if (target) {
+                        allDependencies.add(target.name);
                     }
                 }
             }
@@ -293,8 +295,8 @@ program
                     const outdated = await versionChecker.checkVersions(normalizedDeps);
                     if (outdated.length > 0) {
                         const actuallyOutdated = outdated.filter(info => {
-                            const range = semver.validRange(info.current, { loose: true });
-                            if (!range) return true;
+                            const range = semver.validRange(info.range, { loose: true });
+                            if (!range) return false;
                             return !semver.satisfies(info.latest, range, { includePrerelease: true, loose: true });
                         });
 
