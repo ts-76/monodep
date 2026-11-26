@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.2.0
+
+[compare changes](https://github.com/ts-76/monodep/compare/v0.1.12...v0.2.0)
+
+- Add configurable dynamic-import, installed-peer, and dependency ownership checks.
+- Use the declared globbing dependency for source scanning.
+- Include the MIT license in the npm package.
+
 ## v0.1.12
 
 [compare changes](https://github.com/ts-76/monodep/compare/v0.1.11...v0.1.12)
