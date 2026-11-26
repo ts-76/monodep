@@ -82,18 +82,17 @@ test('a dependency whose bin name differs from the package name is detected from
   assert.doesNotMatch(result.stdout, /\[unused\].*tsx-runner-pkg/, result.stdout);
 });
 
-test('import types, export type-from, import-equals and require.resolve count as usage', () => {
+test('import types, export type-from and import-equals count as usage', () => {
   const result = analyze({
     'package.json': {
       name: 'syntax-forms',
-      dependencies: { 'legacy-cjs': '^1.0.0', 'resolve-me': '^1.0.0' },
+      dependencies: { 'legacy-cjs': '^1.0.0' },
       devDependencies: { 'only-types': '^1.0.0', 'reexported-types': '^1.0.0' },
     },
     'src/index.ts': [
       "export type { Shape } from 'reexported-types';",
       "export type Foo = import('only-types').Foo;",
       "import legacy = require('legacy-cjs');",
-      "export const where = require.resolve('resolve-me');",
       'export { legacy };',
       '',
     ].join('\n'),
@@ -109,6 +108,15 @@ test('a package importing its own name (self-reference) is not reported as missi
     'package.json': { name: 'self-ref', exports: { '.': './src/index.js', './utils': './src/utils.js' } },
     'src/index.js': "import { helper } from 'self-ref/utils';\nexport { helper };\n",
     'src/utils.js': 'export const helper = 1;\n',
+  });
+  assert.doesNotMatch(result.stdout, /\[missing\]/, result.stdout);
+});
+
+test('require.resolve() of an optional/absent package is not treated as a dependency reference', () => {
+  // Guard: checking that a module is *not* installed (e.g. in verification scripts) must not create a "missing" report.
+  const result = analyze({
+    'package.json': { name: 'resolve-guard' },
+    'src/index.js': "export const has = (() => { try { return require.resolve('optional-thing'); } catch { return null; } })();\n",
   });
   assert.doesNotMatch(result.stdout, /\[missing\]/, result.stdout);
 });

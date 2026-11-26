@@ -109,19 +109,6 @@ export class Parser {
                     return;
                 }
 
-                // require.resolve('foo')
-                if (
-                    ts.isCallExpression(node) &&
-                    ts.isPropertyAccessExpression(node.expression) &&
-                    ts.isIdentifier(node.expression.expression) &&
-                    node.expression.expression.text === 'require' &&
-                    node.expression.name.text === 'resolve' &&
-                    node.arguments.length >= 1 &&
-                    isStringLiteral(node.arguments[0])
-                ) {
-                    recordImport((node.arguments[0] as ts.StringLiteral).text, false);
-                }
-
                 // require('foo')
                 if (ts.isCallExpression(node)) {
                     if (
