@@ -34,6 +34,9 @@ export class MonorepoManager {
             },
         );
 
+        // tinyglobby returns entries in completion order; sort so reports are reproducible
+        packageJsonPaths.sort();
+
         // Also include root package.json
         const rootPackageJsonPath = path.join(this.rootDir, 'package.json');
         const normalizeAbsolutePath = (inputPath: string): string =>

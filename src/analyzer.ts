@@ -154,6 +154,10 @@ export class Analyzer {
             }
         }
 
+        unused.sort();
+        missing.sort();
+        wrongType.sort((a, b) => a.dependency.localeCompare(b.dependency));
+
         return {
             package: pkg,
             unused,
