@@ -64,9 +64,33 @@ export class Parser {
                     return;
                 }
 
-                // export * from 'foo' / export { x } from 'foo'
+                // export * from 'foo' / export { x } from 'foo' / export type { X } from 'foo'
                 if (ts.isExportDeclaration(node) && node.moduleSpecifier && isStringLiteral(node.moduleSpecifier)) {
-                    recordImport(node.moduleSpecifier.text, false);
+                    let typeOnly = node.isTypeOnly;
+                    if (!typeOnly && node.exportClause && ts.isNamedExports(node.exportClause)) {
+                        const elements = node.exportClause.elements;
+                        typeOnly = elements.length > 0 && elements.every((el) => el.isTypeOnly);
+                    }
+                    recordImport(node.moduleSpecifier.text, typeOnly);
+                    return;
+                }
+
+                // import fs = require('foo')
+                if (
+                    ts.isImportEqualsDeclaration(node) &&
+                    ts.isExternalModuleReference(node.moduleReference) &&
+                    isStringLiteral(node.moduleReference.expression)
+                ) {
+                    recordImport(node.moduleReference.expression.text, node.isTypeOnly);
+                    return;
+                }
+
+                // Type position: import('foo').Bar
+                if (ts.isImportTypeNode(node)) {
+                    if (ts.isLiteralTypeNode(node.argument) && isStringLiteral(node.argument.literal)) {
+                        recordImport(node.argument.literal.text, true);
+                    }
+                    ts.forEachChild(node, visit);
                     return;
                 }
 
@@ -83,6 +107,19 @@ export class Parser {
                         });
                     }
                     return;
+                }
+
+                // require.resolve('foo')
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isPropertyAccessExpression(node.expression) &&
+                    ts.isIdentifier(node.expression.expression) &&
+                    node.expression.expression.text === 'require' &&
+                    node.expression.name.text === 'resolve' &&
+                    node.arguments.length >= 1 &&
+                    isStringLiteral(node.arguments[0])
+                ) {
+                    recordImport((node.arguments[0] as ts.StringLiteral).text, false);
                 }
 
                 // require('foo')

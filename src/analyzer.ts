@@ -5,6 +5,7 @@ import { PackageInfo } from './monorepo';
 import { Scanner } from './scanner';
 import { Parser } from './parser';
 import module from 'module';
+import { parseJSONC } from 'confbox';
 
 export interface AnalysisResult {
     package: PackageInfo;
@@ -40,7 +41,7 @@ export class Analyzer {
 
         const prodImports = new Set<string>();
         const devImports = new Set<string>();
-        const configImports = await this.collectConfigDependencies(pkg.location, ignorePatterns);
+        const configImports = await this.collectConfigDependencies(pkg, ignorePatterns);
         const dynamicCandidates: AnalysisResult['dynamicCandidates'] = [];
 
         for (const { file, isDev } of scanResults) {
@@ -65,7 +66,7 @@ export class Analyzer {
                 const normalizedImport = this.normalizeImportSpecifier(imp);
 
                 const packageName = this.getPackageName(normalizedImport);
-                if (packageName && !this.builtins.has(packageName)) {
+                if (packageName && packageName !== pkg.name && !this.builtins.has(packageName)) {
                     if (isDev) {
                         devImports.add(packageName);
                     } else {
@@ -84,7 +85,7 @@ export class Analyzer {
 
                 const normalizedImport = this.normalizeImportSpecifier(imp);
                 const packageName = this.getPackageName(normalizedImport);
-                if (packageName && !this.builtins.has(packageName)) {
+                if (packageName && packageName !== pkg.name && !this.builtins.has(packageName)) {
                     // If already counted as prod import, keep it there
                     if (!prodImports.has(packageName)) {
                         devImports.add(packageName);
@@ -202,7 +203,87 @@ export class Analyzer {
         return /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(importPath);
     }
 
-    private async collectConfigDependencies(packageLocation: string, ignorePatterns: string[] = []): Promise<Set<string>> {
+    /**
+     * Find declared dependencies that scripts run as commands, either by package name
+     * (`rolldown -c`) or by one of the package's bin names read from node_modules.
+     */
+    private collectScriptCommandDependencies(pkg: PackageInfo, scripts: string[]): Set<string> {
+        const found = new Set<string>();
+        const declared = new Set([
+            ...Object.keys(pkg.dependencies || {}),
+            ...Object.keys(pkg.devDependencies || {}),
+            ...Object.keys(pkg.peerDependencies || {}),
+            ...Object.keys(pkg.optionalDependencies || {}),
+        ]);
+        if (declared.size === 0) return found;
+
+        const commands = new Set<string>();
+        for (const script of scripts) {
+            for (const segment of script.split(/&&|\|\||[;|\n]/)) {
+                const tokens = segment.trim().split(/\s+/).filter(Boolean);
+                let i = 0;
+                const skipEnvAssignments = () => {
+                    while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i++;
+                };
+                skipEnvAssignments();
+                // Wrappers that run another command: npx/bunx/pnpx [flags] cmd, pnpm exec|dlx cmd, ...
+                const wrapperWithSubcommand = new Set(['pnpm', 'yarn', 'npm', 'bun']);
+                if (tokens[i] && ['npx', 'bunx', 'pnpx'].includes(tokens[i])) {
+                    i++;
+                    while (i < tokens.length && tokens[i].startsWith('-')) i++;
+                } else if (tokens[i] && wrapperWithSubcommand.has(tokens[i]) && ['exec', 'dlx', 'x'].includes(tokens[i + 1])) {
+                    i += 2;
+                    while (i < tokens.length && tokens[i].startsWith('-')) i++;
+                }
+                skipEnvAssignments();
+                if (i < tokens.length) {
+                    const command = tokens[i].replace(/^["']|["']$/g, '').replace(/^(\.\/)?node_modules\/\.bin\//, '');
+                    if (command) commands.add(command);
+                }
+            }
+        }
+        if (commands.size === 0) return found;
+
+        for (const dep of declared) {
+            if (commands.has(dep)) {
+                found.add(dep);
+                continue;
+            }
+            for (const bin of this.readInstalledBinNames(pkg.location, dep)) {
+                if (commands.has(bin)) {
+                    found.add(dep);
+                    break;
+                }
+            }
+        }
+        return found;
+    }
+
+    private readInstalledBinNames(packageLocation: string, dep: string): string[] {
+        let dir = packageLocation;
+        for (;;) {
+            const manifestPath = path.join(dir, 'node_modules', dep, 'package.json');
+            if (fs.existsSync(manifestPath)) {
+                try {
+                    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as {
+                        bin?: string | Record<string, string>;
+                    };
+                    if (typeof manifest.bin === 'string') {
+                        return [dep.split('/').pop() as string];
+                    }
+                    return Object.keys(manifest.bin || {});
+                } catch {
+                    return [];
+                }
+            }
+            const parent = path.dirname(dir);
+            if (parent === dir) return [];
+            dir = parent;
+        }
+    }
+
+    private async collectConfigDependencies(pkg: PackageInfo, ignorePatterns: string[] = []): Promise<Set<string>> {
+        const packageLocation = pkg.location;
         const dependencies = new Set<string>();
         const bunfigPath = path.join(packageLocation, 'bunfig.toml');
         const packageJsonPath = path.join(packageLocation, 'package.json');
@@ -245,6 +326,10 @@ export class Analyzer {
                         dependencies.add(dep);
                     }
                 }
+
+                for (const dep of this.collectScriptCommandDependencies(pkg, Object.values(packageJson.scripts || {}))) {
+                    dependencies.add(dep);
+                }
             } catch (e) {
                 console.warn(`Failed to parse ${packageJsonPath}:`, e);
             }
@@ -254,7 +339,7 @@ export class Analyzer {
             dependencies.add('typescript');
 
             try {
-                const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf-8')) as {
+                const tsconfig = parseJSONC(fs.readFileSync(tsconfigPath, 'utf-8')) as {
                     compilerOptions?: { types?: string[] };
                 };
 
@@ -263,7 +348,7 @@ export class Analyzer {
                     dependencies.add(normalizedTypePkg);
                 }
             } catch {
-                // tsconfig may contain comments; ignore parse failures
+                // A tsconfig that cannot be parsed even as JSONC is ignored
             }
         }
 
