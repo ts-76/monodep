@@ -22,6 +22,9 @@ export class Scanner {
             absolute: true,
         });
 
+        // tinyglobby returns entries in completion order; sort so reports are reproducible
+        files.sort();
+
         return files.map((file) => {
             // Normalize separators so path checks are OS-independent
             const normalized = file.split(path.sep).join('/');

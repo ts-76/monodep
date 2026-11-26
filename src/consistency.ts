@@ -16,7 +16,9 @@ export class ConsistencyChecker {
         const dependencyMap = new Map<string, Map<string, string[]>>();
 
         for (const pkg of packages) {
-            const allDeps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
+            // peerDependencies hold intentionally broad ranges (e.g. ">=18") that are expected to
+            // differ from the pinned versions used elsewhere, so they are not compared.
+            const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 
             for (const [dep, version] of Object.entries(allDeps)) {
                 const normalizedVersion = resolveVersion ? resolveVersion(dep, version, pkg.name) : version;

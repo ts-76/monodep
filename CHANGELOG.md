@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.3.0
+
+[compare changes](https://github.com/ts-76/monodep/compare/v0.2.0...v0.3.0)
+
+- Report the `package.json` version from `--version` instead of a hardcoded `1.0.0`.
+- Exit 2 when the target directory does not exist or contains no `package.json`. Those cases previously exited 0.
+- Parse `tsconfig.json` as JSONC so comments and trailing commas keep `compilerOptions.types`.
+- Treat a declared dependency run from `scripts` (by package name or installed bin name, including `npx`, `bunx`, and `pnpm exec`) as used.
+- Recognize `import('x').T`, `export type { } from`, and `import x = require()` as usage. An `export type` from a module is type-only.
+- Do not report a package that imports its own name as missing.
+- Do not compare `peerDependencies` ranges in the version-mismatch check.
+- Skip git, URL, `link:`, and dist-tag specifiers in the outdated check, resolve `npm:` aliases to the aliased package, and honor `MONODEP_REGISTRY` with a 10 second registry timeout.
+- Do not treat `require.resolve()` as a dependency reference.
+- Sort package discovery and per-package issue lists so repeated runs print a stable report.
+
 ## v0.2.0
 
 [compare changes](https://github.com/ts-76/monodep/compare/v0.1.12...v0.2.0)

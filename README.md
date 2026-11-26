@@ -263,8 +263,9 @@ monodep detects dependency usage from these files in each package:
   - Scans `@plugin "..."` and `@import "..."` directives for package usage.
 - **Package config**: `package.json`
   - Scans `scripts` for common CLI tools (e.g. `vite`, `wrangler`, `cross-env`, `tsc`, `tsdown`, `tailwindcss`).
+  - A declared dependency that a script runs as a command (by package name or by a bin name found in `node_modules`, optionally behind `npx`/`bunx`/`pnpm exec`) counts as used.
 - **TypeScript config**: `tsconfig.json`
-  - Reads `compilerOptions.types` and maps entries like `vite/client` to package name `vite`.
+  - Reads `compilerOptions.types` (comments and trailing commas are allowed) and maps entries like `vite/client` to package name `vite`.
   - If `tsconfig.json` exists, `typescript` is treated as toolchain usage.
 - **Bun config**: `bunfig.toml`
   - Scans `install.security.scanner` (e.g. `@socketsecurity/bun-security-scanner`).
@@ -291,7 +292,7 @@ monodep detects dependency usage from these files in each package:
   - Compares declared semver range against npm latest version.
   - Reports only when latest does not satisfy the declared range.
 - **Version mismatch**:
-  - Compares normalized versions across packages and reports when the same dependency has multiple distinct versions.
+  - Compares normalized `dependencies`/`devDependencies` versions across packages and reports when the same dependency has multiple distinct versions. `peerDependencies` ranges are not compared.
 
 ## How it Works
 
@@ -311,6 +312,8 @@ The outdated dependency check requires network requests to the npm registry. To 
 - **Parallel requests**: Up to 10 concurrent requests with rate limiting
 - **Caching**: Version information is cached during execution
 - **Skip option**: Use `--no-outdated` to skip version checks entirely for fastest execution
+- **Custom registry**: Set `MONODEP_REGISTRY` (default `https://registry.npmjs.org`) to query another npm-compatible registry
+- **Non-registry specs are skipped**: `workspace:`, `file:`, `link:`, git/URL specifiers and dist-tags like `latest` are never reported as outdated; `npm:` aliases are compared against the aliased package
 
 ```bash
 # Fast mode (skip outdated checks)
@@ -326,6 +329,7 @@ npx monodep .
 |------|-------------|
 | `0` | No issues found |
 | `1` | One or more issues detected |
+| `2` | Invalid usage, e.g. the directory does not exist or contains no `package.json` |
 
 ## License
 
