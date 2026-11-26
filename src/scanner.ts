@@ -1,4 +1,4 @@
-import { glob } from 'glob';
+import { glob } from 'tinyglobby';
 import path from 'path';
 
 export interface ScanResult {

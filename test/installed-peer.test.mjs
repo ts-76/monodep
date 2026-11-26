@@ -13,6 +13,16 @@ const cliPath = path.join(repoRoot, 'dist', 'index.js');
 function setupFixture() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'monodep-installed-peer-'));
   fs.cpSync(fixtureSource, tmpDir, { recursive: true });
+  const installed = {
+    'needs-react17': { version: '1.0.0', peerDependencies: { react: '^17.0.0' } },
+    'needs-typescript': { version: '1.0.0', peerDependencies: { typescript: '^5.0.0' } },
+    react: { version: '18.2.0' },
+  };
+  for (const [name, manifest] of Object.entries(installed)) {
+    const packageDir = path.join(tmpDir, 'node_modules', name);
+    fs.mkdirSync(packageDir, { recursive: true });
+    fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ name, ...manifest }));
+  }
   return tmpDir;
 }
 
