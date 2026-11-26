@@ -34,12 +34,15 @@ interface CompactIssue {
     detail?: string;
 }
 
+declare const __MONODEP_VERSION__: string | undefined;
+const VERSION = typeof __MONODEP_VERSION__ === 'string' ? __MONODEP_VERSION__ : 'unknown';
+
 const program = new Command();
 
 program
     .name('monodep')
     .description('A dependency check tool for monorepos')
-    .version('1.0.0')
+    .version(VERSION)
     .argument('[directory]', 'Root directory of the project', '.')
     .option('--compact', 'Output compact log for AI agents')
     .option('--only-extras', 'Only run checks not covered by Knip (wrongType, mismatch, outdated, internal, peer)')
@@ -48,6 +51,10 @@ program
     .option('--ownership-report', 'Show dependency ownership suggestions across workspaces (informational)')
     .action(async (directory, options) => {
         const rootDir = path.resolve(directory);
+        if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
+            console.error(`monodep: directory does not exist: ${rootDir}`);
+            process.exit(2);
+        }
         const compact = options.compact;
         const onlyExtras = options.onlyExtras;
         const skipOutdated = options.outdated === false;
@@ -74,6 +81,10 @@ program
 
         const monorepo = new MonorepoManager(rootDir);
         const packages = await monorepo.getPackages();
+        if (packages.length === 0) {
+            console.error(`monodep: no package.json found in ${rootDir}`);
+            process.exit(2);
+        }
 
         const rootCatalog = (() => {
             const rootPackagePath = path.join(rootDir, 'package.json');
