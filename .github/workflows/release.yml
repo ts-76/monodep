@@ -4,22 +4,110 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, such as v0.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
+  package:
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release source
+        id: source
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable release tag such as v0.2.0."
+            exit 1
+          fi
+
+          tag_commit=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+          git merge-base --is-ancestor "$tag_commit" origin/main
+
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            # Preserve provenance for the workflow commit while testing the same package source.
+            if ! git diff --quiet "$tag_commit" HEAD -- . ':(exclude).github/workflows/release.yml'; then
+              echo "::error::The release tag and main have different package sources."
+              exit 1
+            fi
+          elif [[ "$tag_commit" != "$(git rev-parse HEAD)" ]]; then
+            echo "::error::The checked-out commit does not match the release tag."
+            exit 1
+          fi
+
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Verify package identity
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          test "$(node -p "require('./package.json').name")" = monodep
+          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Pack the tested package
+        run: npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/monodep-${{ steps.source.outputs.version }}.tgz
+          if-no-files-found: error
+
   publish:
+    needs: package
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-      - run: npm publish --access public
+          node-version: '24'
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}
+
+      - name: Publish with npm Trusted Publishing
+        shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          status=$(curl --silent --show-error --retry 2 --output /dev/null --write-out '%{http_code}' \
+            "https://registry.npmjs.org/monodep/$RELEASE_VERSION")
+          case "$status" in
+            200) echo "monodep@$RELEASE_VERSION is already published." ;;
+            404) npm publish "$RUNNER_TEMP/monodep-$RELEASE_VERSION.tgz" --access public --ignore-scripts --provenance ;;
+            *) echo "::error::npm registry returned HTTP $status."; exit 1 ;;
+          esac
